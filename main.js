@@ -39,6 +39,8 @@ function POP3Client(port, host, options) {
 	var enabletls = options.enabletls !== undefined ? options.enabletls: false;
 	var ignoretlserrs = options.ignoretlserrs !== undefined ? options.ignoretlserrs: false;
 	var debug = options.debug || false;
+	// Add connection timeout option
+	var connectionTimeout = options.connectionTimeout || 10000;
 
 	// Private variables follow
 	var self = this;
@@ -125,6 +127,24 @@ function POP3Client(port, host, options) {
 		socket.end();
 	};
 
+	// Closes the socket connection
+	this.close = function () {
+		var closeMethod = "destroy";
+		if (this.getState() === 1) {
+			closeMethod = "end";
+		}
+
+		if (socket && socket.socket && socket.socket[closeMethod] && !socket.socket.destroyed) {
+			socket.socket[closeMethod]();
+			socket.socket = null;
+		}
+
+		if (socket && socket[closeMethod] && !socket.destroyed) {
+			socket[closeMethod]();
+			socket = null;
+		}
+	};
+
 	// Upgrades a standard unencrypted TCP connection to use TLS
 	// Liberally copied and modified from https://gist.github.com/848444
 	// starttls() should be a private function, but I can't figure out
@@ -193,6 +213,14 @@ function POP3Client(port, host, options) {
 
 	// Private methods follow
 	// Event handlers follow
+	function onConnect() {
+		// Set state to 1 to indicate connected
+		self.setState(1);
+
+		// Clear connection timeout timer
+		clearTmrConn();
+	}
+
 	function onData(data) {
 
 		data = data.toString("ascii");
@@ -250,10 +278,12 @@ function POP3Client(port, host, options) {
 				callback(responseCopy, bufferedDataCopy);
 
 			}
-		} 
+		}
 	}
 
 	function onError(err) {
+		// Clear connection timeout timer
+		clearTmrConn();
 
 		if (err.errno === 111) self.emit("connect", false, err);
 		else self.emit("error", err);
@@ -277,6 +307,7 @@ function POP3Client(port, host, options) {
 	if (enabletls === true) {
 
 		tlssock = tls.connect(port, host, function() {
+			onConnect();
 
 			if (tlssock.authorized === false) {
 
@@ -289,13 +320,26 @@ function POP3Client(port, host, options) {
 
 		socket = tlssock;
 
-	} else socket = new net.createConnection(port, host);
+	} else socket = new net.createConnection(port, host, onConnect);
 
 	// Set up event handlers
 	socket.on("data", onData);
 	socket.on("error", onError);
 	socket.on("end", onEnd);
 	socket.on("close", onClose);
+
+	// Handle connection timeout
+	var tmrConn = setTimeout(function () {
+		var error = new Error("Connection timeout");
+		error.code = "ETIMEDOUT";
+		error.errno = "ETIMEDOUT";
+		self.emit("error", error);
+		self.close();
+	}, connectionTimeout);
+
+	function clearTmrConn() {
+		clearTimeout(tmrConn);
+	}
 
 }
 
@@ -398,7 +442,7 @@ POP3Client.prototype.auth = function (type, username, password) {
 					self.write(response);
 
 				}
-			});		
+			});
 		}
 
 		self.write("AUTH " + type + initialresp);
@@ -475,7 +519,7 @@ POP3Client.prototype.stls = function() {
 
 					if (resp === false && self.data["ignoretlserrs"] === true && data === "DEPTH_ZERO_SELF_SIGNED_CERT")
 						resp = true;
-	
+
 					self.data["stls"] = true;
 					self.emit("stls", resp, data);
 
