@@ -41,6 +41,8 @@ function POP3Client(port, host, options) {
 	var debug = options.debug || false;
 	// Add connection timeout option
 	var connectionTimeout = options.connectionTimeout || 10000;
+	// Add tls options
+	var tlsOptions = options.tlsOptions || {};
 
 	// Private variables follow
 	var self = this;
@@ -306,7 +308,7 @@ function POP3Client(port, host, options) {
 	// Remote end socket
 	if (enabletls === true) {
 
-		tlssock = tls.connect(port, host, function() {
+		tlssock = tls.connect(port, host, tlsOptions, function() {
 			onConnect();
 
 			if (tlssock.authorized === false) {
