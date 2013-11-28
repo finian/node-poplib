@@ -49,6 +49,7 @@ function POP3Client(port, host, options) {
 	var response = null;
 	var checkResp = true;
 	var bufferedData = "";
+	var respBuffers = []; // Response buffers
 	var state = 0;
 	var locked = false;
 	var multiline = false;
@@ -225,6 +226,8 @@ function POP3Client(port, host, options) {
 
 	function onData(data) {
 
+		respBuffers.push(data);
+
 		data = data.toString("ascii");
 		bufferedData += data;
 
@@ -258,26 +261,30 @@ function POP3Client(port, host, options) {
 				// Make a copy to avoid race conditions
 				var responseCopy = response;
 				var bufferedDataCopy = bufferedData;
+				var respBuffersCopy = respBuffers.slice(0);
 
 				response = null;
 				checkResp = true;
 				multiline = false;
 				bufferedData = "";
+				respBuffers.length = 0;
 
-				callback(responseCopy, bufferedDataCopy);
+				callback(responseCopy, bufferedDataCopy, Buffer.concat(respBuffersCopy));
 
 			} else if (multiline === false) {
 
 				// Make a copy to avoid race conditions
 				var responseCopy = response;
 				var bufferedDataCopy = bufferedData;
+				var respBuffersCopy = respBuffers.slice(0);
 
 				response = null;
 				checkResp = true;
 				multiline = false;
 				bufferedData = "";
+				respBuffers.length = 0;
 
-				callback(responseCopy, bufferedDataCopy);
+				callback(responseCopy, bufferedDataCopy, Buffer.concat(respBuffersCopy));
 
 			}
 		}
@@ -547,7 +554,7 @@ POP3Client.prototype.top = function(msgnumber, lines) {
 	else if (self.getLocked() === true) self.emit("locked", "top");
 	else {
 
-		self.setCallback(function(resp, data) {
+		self.setCallback(function(resp, data, binData) {
 
 			var returnValue = null;
 			self.setLocked(false);
@@ -564,7 +571,7 @@ POP3Client.prototype.top = function(msgnumber, lines) {
 
 			}
 
-			self.emit("top", resp, msgnumber, returnValue, data);
+			self.emit("top", resp, msgnumber, returnValue, data, binData);
 
 		});
 
